@@ -4,13 +4,12 @@
             "name": "Linux",
             "includePath": [
                 "/home/pillot/.arduino15/packages/esp8266/tools/**",
-                "/home/pillot/.arduino15/packages/esp8266/hardware/esp8266/2.6.3/**",
                 "/home/pillot/.arduino15/packages/esp8266/hardware/esp8266/2.7.4/**"
             ],
             "forcedInclude": [],
             "intelliSenseMode": "gcc-x64",
-            "compilerPath": "/home/pillot/root/bin/arm-none-eabi-gcc",
-            "cStandard": "gnu18",
+            "compilerPath": "/home/pillot/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/2.5.0-4-b40a506/bin/xtensa-lx106-elf-gcc",
+            "cStandard": "${default}",
             "cppStandard": "gnu++14"
         }
     ],
