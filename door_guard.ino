@@ -1,21 +1,18 @@
 #include <ESP8266WiFi.h>
-//#include <EspMQTTClient.h>
+#include <EspMQTTClient.h>
 
 #include "mq.h"
 #include "door_guard.h"
 
-//EspMQTTClient mqttclient(
-//  WIFI_SSID,
-//  WIFI_PASS,
-//  MQTT_IP,
-//  MQTT_USER,
-//  MQTT_PASS,
-//  "door-guard"
-//);
-
-//void onConnectionEstablished() {
-//  Serial.println("MQTT connection!");
-//}
+EspMQTTClient mqttclient(
+  WIFI_SSID,
+  WIFI_PASS,
+  MQTT_IP,
+  MQTT_USER,
+  MQTT_PASS,
+  "door-guard",
+  1883
+);
 
 #define DOOR_SENSOR_PIN 13
 #define PIR_SENSOR_PIN 12
@@ -39,6 +36,16 @@ inline void serial_println(const char *message)
   mq_push(&serial_queue, message);
   mq_push(&serial_queue, "\r\n");
   interrupts();
+}
+
+void onConnectionEstablished() {
+  serial_println("MQTT connected");
+}
+
+void send_report(const char *topic, const char *message) {
+  if (mqttclient.isConnected()) {
+    mqttclient.publish(topic, message);
+  }
 }
 
 inline void internal_led_init()
@@ -74,22 +81,14 @@ void door_sensor_init() {
 }
 
 ICACHE_RAM_ATTR void pir_rising() {
-  serial_println("pir");
+  send_report("home/sensors/pir_door", "event");
+  serial_println("pir_door event");
 }
 
 void pir_sensor_init() {
   pinMode(PIR_SENSOR_PIN, INPUT);
   attachInterrupt(digitalPinToInterrupt(PIR_SENSOR_PIN), pir_rising, RISING);
 }
-
-//void send_report() {
-//  Serial.println("sending report!");
-//  delay(500);
-//  if (mqttclient.isConnected()) {
-//    Serial.println("connected, publishing");
-//    mqttclient.publish("channel/test", "This is a message from ESP");
-//  }
-//}
 
 void setup() {
   Serial.begin(115200);
@@ -111,9 +110,11 @@ void handle_door()
 
       if (digitalRead(DOOR_SENSOR_PIN)) {
         door_open = false;
+        send_report("home/sensors/door", "closed");
         serial_println("door closed");
       } else {
         door_open = true;
+        send_report("home/sensors/door", "open");
         serial_println("door open");
       }
 
@@ -136,7 +137,7 @@ void handle_serial_queue()
 }
 
 void loop() {
-  //mqttclient.loop();
+  mqttclient.loop();
 
   handle_door();
   handle_serial_queue();
