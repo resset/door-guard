@@ -17,24 +17,36 @@ EspMQTTClient mqttclient(
 #define DOOR_SENSOR_PIN 13
 #define PIR_SENSOR_PIN 12
 
-char serial_queue_buffer[300];
+#define SERIAL_BUFFER_SIZE 300
+#define SERIAL_MESSAGE_SIZE 80
+char serial_queue_buffer[SERIAL_BUFFER_SIZE];
 mq_t serial_queue;
 
 volatile bool door_open = false;
 volatile unsigned long last_change_time = 0;
 
+inline void serial_print_i(const char *message)
+{
+  mq_push(&serial_queue, message);
+}
+
+inline void serial_println_i(const char *message)
+{
+  serial_print_i(message);
+  serial_print_i("\r\n");
+}
+
 inline void serial_print(const char *message)
 {
   noInterrupts();
-  mq_push(&serial_queue, message);
+  serial_print_i(message);
   interrupts();
 }
 
 inline void serial_println(const char *message)
 {
   noInterrupts();
-  mq_push(&serial_queue, message);
-  mq_push(&serial_queue, "\r\n");
+  serial_println_i(message);
   interrupts();
 }
 
@@ -42,9 +54,19 @@ void onConnectionEstablished() {
   serial_println("MQTT connected");
 }
 
-void send_report(const char *topic, const char *message) {
+void send_report(const char *topic, const char *message)
+{
+  noInterrupts();
+  serial_print_i(topic);
+  serial_print_i(": ");
+  serial_print_i(message);
+  interrupts();
+
   if (mqttclient.isConnected()) {
     mqttclient.publish(topic, message);
+    serial_println(" ...sent!");
+  } else {
+    serial_println(" ...not sent!");
   }
 }
 
@@ -82,7 +104,6 @@ void door_sensor_init() {
 
 ICACHE_RAM_ATTR void pir_rising() {
   send_report("home/sensors/pir_door", "event");
-  serial_println("pir_door event");
 }
 
 void pir_sensor_init() {
@@ -100,7 +121,7 @@ void setup() {
 
   Serial.println("door-guard boot finished");
 
-  mq_init(&serial_queue, serial_queue_buffer, (size_t)20);
+  mq_init(&serial_queue, serial_queue_buffer, (size_t)SERIAL_BUFFER_SIZE);
 }
 
 void handle_door()
@@ -111,11 +132,9 @@ void handle_door()
       if (digitalRead(DOOR_SENSOR_PIN)) {
         door_open = false;
         send_report("home/sensors/door", "closed");
-        serial_println("door closed");
       } else {
         door_open = true;
         send_report("home/sensors/door", "open");
-        serial_println("door open");
       }
 
       last_change_time = 0;
@@ -126,7 +145,7 @@ void handle_door()
 void handle_serial_queue()
 {
   while (MQ_FALSE == mq_is_empty(&serial_queue)) {
-    char message[100];
+    char message[SERIAL_MESSAGE_SIZE];
     noInterrupts();
     mq_result_t res = mq_pop(&serial_queue, message);
     interrupts();
