@@ -23,6 +23,24 @@
 char serial_queue_buffer[300];
 mq_t serial_queue;
 
+volatile bool door_open = false;
+volatile unsigned long last_change_time = 0;
+
+inline void serial_print(const char *message)
+{
+  noInterrupts();
+  mq_push(&serial_queue, message);
+  interrupts();
+}
+
+inline void serial_println(const char *message)
+{
+  noInterrupts();
+  mq_push(&serial_queue, message);
+  mq_push(&serial_queue, "\r\n");
+  interrupts();
+}
+
 inline void internal_led_init()
 {
   pinMode(LED_BUILTIN, OUTPUT);
@@ -39,29 +57,19 @@ inline void internal_led_off()
   digitalWrite(LED_BUILTIN, HIGH);
 }
 
-void serial_println(const char *message)
-{
-  mq_push(&serial_queue, message);
-  mq_push(&serial_queue, "\r\n");
-}
-
 ICACHE_RAM_ATTR void door_change() {
-  static unsigned long last_interrupt_time = 0;
-  unsigned long interrupt_time = millis();
-
-  if (interrupt_time - last_interrupt_time > 200) {
-    if (digitalRead(DOOR_SENSOR_PIN)) {
-      serial_println("door closed");
-    } else {
-      serial_println("door opened");
-    }
-  }
-
-  last_interrupt_time = interrupt_time;
+  last_change_time = millis();
 }
 
 void door_sensor_init() {
   pinMode(DOOR_SENSOR_PIN, INPUT);
+
+  if (digitalRead(DOOR_SENSOR_PIN)) {
+    door_open = false;
+  } else {
+    door_open = true;
+  }
+
   attachInterrupt(digitalPinToInterrupt(DOOR_SENSOR_PIN), door_change, CHANGE);
 }
 
@@ -86,22 +94,38 @@ void pir_sensor_init() {
 void setup() {
   Serial.begin(115200);
   Serial.println("");
-  Serial.println("boot sequence start");
 
   internal_led_init();
-
   door_sensor_init();
   pir_sensor_init();
 
-  Serial.println("boot sequence finished");
+  Serial.println("door-guard boot finished");
 
   mq_init(&serial_queue, serial_queue_buffer, (size_t)20);
 }
 
+void handle_door()
+{
+  if (last_change_time > 0) {
+    if (millis() - last_change_time > 500) {
+
+      if (digitalRead(DOOR_SENSOR_PIN)) {
+        door_open = false;
+        serial_println("door closed");
+      } else {
+        door_open = true;
+        serial_println("door open");
+      }
+
+      last_change_time = 0;
+    }
+  }
+}
+
 void handle_serial_queue()
 {
-  if (MQ_FALSE == mq_is_empty(&serial_queue)) {
-    char message[30];
+  while (MQ_FALSE == mq_is_empty(&serial_queue)) {
+    char message[100];
     noInterrupts();
     mq_result_t res = mq_pop(&serial_queue, message);
     interrupts();
@@ -113,5 +137,13 @@ void handle_serial_queue()
 
 void loop() {
   //mqttclient.loop();
+
+  handle_door();
   handle_serial_queue();
+
+  if (door_open) {
+    internal_led_on();
+  } else {
+    internal_led_off();
+  }
 }
